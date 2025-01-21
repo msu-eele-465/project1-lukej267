@@ -79,12 +79,34 @@ RESET       mov.w   #__STACK_END,SP         ; Initialize stack pointer
 StopWDT     mov.w   #WDTPW+WDTHOLD,&WDTCTL  ; Stop WDT
 SetupP1     bic.b   #BIT0,&P1OUT            ; Clear P1.0 output
             bis.b   #BIT0,&P1DIR            ; P1.0 output
-            bic.w   #LOCKLPM5,&PM5CTL0       ; Unlock I/O pins
+
+SetupP6     bic.b   #BIT6,&P6OUT             ; Clear P6.6 output
+            bis.b   #BIT6,&P6DIR             ; P6.6 output
+
+            bic.w   #LOCKLPM5,&PM5CTL0      ; Unlock I/O pins
+SetupTimerB0
+		    bis.w		#TBCLR, &TB0CTL			; clear TB0 timer
+		    bis.w		#TBSSEL__SMCLK, &TB0CTL ; choose SMCLK
+		    bis.w		#MC__UP, &TB0CTL		; choose UP counting
+		    bis.w		#CNTL_0, &TB0CTL		; 16-bit counter length
+		    bis.w		#ID__8, &TB0CTL			; divide by 8 in the first divider
+            bis.w       #TBIDEX__4, &TB0EX0     ; divide by 5 in second divider
+
+SetupCompareRegisters
+		    mov.w		#32820d, &TB0CCR0		; set period to 20ms (20,000 counts)
+		    
+		    bis.w		#CCIE, &TB0CCTL0		; Enable TB0CCR0 Interrupt
+		    bic.w		#CCIFG, &TB0CCTL0		; Clear TB0CCR0 Flag
+
+            NOP
+            eint                                ; Enable Global Interrupts
+            NOP
 ;--------------------------------------------------------------------------------
 ; Main
 ;--------------------------------------------------------------------------------
-Mainloop    xor.b   #BIT0,&P1OUT            ; Toggle P1.0 every 0.1s
-            mov.w   #5, R14                 ; Additional delay to R14
+;LED1
+Mainloop    xor.b   #BIT0,&P1OUT            ; Toggle P1.0 every 1s
+            mov.w   #7, R14                 ; Additional delay to R14
 Wait        mov.w   #50000,R15              ; Delay to R15
 L1          dec.w   R15                     ; Decrement R15
             jnz     L1                      ; Delay over?
@@ -93,8 +115,21 @@ L1          dec.w   R15                     ; Decrement R15
             jmp     Mainloop                ; Again
             NOP
 ;------------------------------------------------------------------------------
+;           Interrupt Service Routines
+;------------------------------------------------------------------------------
+ISR_TB0_CCR0:
+            xor.b		#BIT6, &P6OUT			; Toggle P6.6
+		    bic.w		#CCIFG, &TB0CCTL0		; Clear TB0CCR0 Flag
+		    reti
+
+
+;------------------------------------------------------------------------------
 ;           Interrupt Vectors
 ;------------------------------------------------------------------------------
             .sect   RESET_VECTOR            ; MSP430 RESET Vector
             .short  RESET                   ;
-            .end
+            
+
+            .sect	TIMER0_B0_VECTOR				; TB0CCR0 vector
+            .short	ISR_TB0_CCR0
+
